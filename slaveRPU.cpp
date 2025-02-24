@@ -4,13 +4,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstdint>
-#include <bitset>
+#include <iomanip>
 
 #define BUFFER_SIZE 2048
-
-std::string toBinaryString(uint32_t value) {
-    return std::bitset<32>(value).to_string();
-}
 
 int main(int argc, char *argv[]) {
 
@@ -77,7 +73,6 @@ int main(int argc, char *argv[]) {
         }
 
         int k = (n - 11) / 56;
-        int count = 0;
 
         uint32_t cyclic_counter, checksum;
         uint16_t len_info;
@@ -140,7 +135,8 @@ int main(int argc, char *argv[]) {
         std::cout << "cyclic_counter = " << cyclic_counter << std::endl;
         std::cout << "checksum = " << checksum << std::endl;
         std::cout << "len_info = " << len_info << std::endl;
-        std::cout << "message_id = " << message_id << std::endl;
+        std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
+        std::cout << "  Number of bytes received: " << n << std::endl;
 
         message = "ok";
 
