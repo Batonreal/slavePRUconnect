@@ -111,10 +111,12 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+        std::cout << "  Number of bytes received: " << n << std::endl;
+
         if (buffer[0] == static_cast<char>(255)) {
-            // Если первый байт равен 255, читаем сообщение как текст
-            std::cout << "Received text message: " << std::string(buffer, n) << std::endl;
-            continue;
+            // Если первый байт равен 255, читаем сообщение как текст, исключая первый байт
+        	std::cout << "Received text message: " << std::string(buffer + 1, n - 1) << std::endl;
+        	continue;
         }
 
         if (n < 16) {
@@ -142,7 +144,7 @@ int main(int argc, char *argv[]) {
 
         std::cout << "Received data:" << std::endl;
 
-        for (int i = k; i > 0; --i) {
+        for (int i = k-1; i > -1; --i) {
             memcpy(&packets[i].impulse_ns_10, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
             memcpy(&packets[i].impulse_ns_9, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
             memcpy(&packets[i].impulse_ns_8, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
