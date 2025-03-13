@@ -6,10 +6,17 @@
 #include <cstdint>
 #include <iomanip>
 #include <vector>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/spi/spidev.h>
+#include <sstream>
+#include <stdexcept>
 
 #define BUFFER_SIZE 2048
+#define NUM_BYTES_PACKET 45
 
 struct Packet {
+    uint8_t packet_id;
     uint32_t phase;
     uint32_t impulse_ns_1;
     uint32_t impulse_ns_2;
@@ -23,18 +30,62 @@ struct Packet {
     uint32_t impulse_ns_10;
 };
 
+class SpiController {
+public:
+    SpiController(const std::string& device) : devicePath(device) {
+        openDevice();
+    }
+
+    ~SpiController() {
+        closeDevice();
+    }
+
+    void setSpeed(uint32_t speedHz) {
+        if (ioctl(fileDescriptor, SPI_IOC_WR_MAX_SPEED_HZ, &speedHz) == -1) {
+            throw std::runtime_error("Ошибка при установке скорости SPI");
+        }
+    }
+
+    std::vector<uint8_t> transfer(const std::vector<uint8_t>& txData) {
+        std::vector<uint8_t> rxData(txData.size());
+
+        spi_ioc_transfer transfer;
+        memset(&transfer, 0, sizeof(transfer)); // Инициализация нулями
+
+        transfer.tx_buf = (unsigned long)txData.data();
+        transfer.rx_buf = (unsigned long)rxData.data();
+        transfer.len = txData.size();
+        transfer.speed_hz = 0; // Используем установленную скорость
+
+        if (ioctl(fileDescriptor, SPI_IOC_MESSAGE(1), &transfer) < 0) {
+            throw std::runtime_error("Ошибка при передаче SPI");
+        }
+
+        return rxData;
+    }
+
+private:
+    void openDevice() {
+        fileDescriptor = open(devicePath.c_str(), O_RDWR);
+        if (fileDescriptor < 0) {
+            std::stringstream ss;
+            ss << "Ошибка открытия устройства SPI: " << devicePath;
+            throw std::runtime_error(ss.str());
+        }
+    }
+
+    void closeDevice() {
+        if (fileDescriptor != -1) {
+            close(fileDescriptor);
+        }
+    }
+
+    std::string devicePath;
+    int fileDescriptor = -1;
+};
+
 bool compare_packets(const Packet& p1, const Packet& p2) {
-    return p1.phase == p2.phase &&
-           p1.impulse_ns_1 == p2.impulse_ns_1 &&
-           p1.impulse_ns_2 == p2.impulse_ns_2 &&
-           p1.impulse_ns_3 == p2.impulse_ns_3 &&
-           p1.impulse_ns_4 == p2.impulse_ns_4 &&
-           p1.impulse_ns_5 == p2.impulse_ns_5 &&
-           p1.impulse_ns_6 == p2.impulse_ns_6 &&
-           p1.impulse_ns_7 == p2.impulse_ns_7 &&
-           p1.impulse_ns_8 == p2.impulse_ns_8 &&
-           p1.impulse_ns_9 == p2.impulse_ns_9 &&
-           p1.impulse_ns_10 == p2.impulse_ns_10;
+    return p1.packet_id == p2.packet_id;
 }
 
 void check_for_duplicates(const std::vector<Packet>& previous_packets, const std::vector<Packet>& current_packets) {
@@ -56,6 +107,55 @@ void check_for_duplicates(const std::vector<Packet>& previous_packets, const std
     }
 }
 
+std::vector<uint8_t> createMessage(const Packet& packet) {
+    std::vector<uint8_t> message;
+    message.push_back((packet.impulse_ns_10 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_10 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_10 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_10 & 0xFF);
+    message.push_back((packet.impulse_ns_9 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_9 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_9 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_9 & 0xFF);
+    message.push_back((packet.impulse_ns_8 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_8 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_8 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_8 & 0xFF);
+    message.push_back((packet.impulse_ns_7 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_7 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_7 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_7 & 0xFF);
+    message.push_back((packet.impulse_ns_6 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_6 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_6 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_6 & 0xFF);
+    message.push_back((packet.impulse_ns_5 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_5 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_5 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_5 & 0xFF);
+    message.push_back((packet.impulse_ns_4 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_4 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_4 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_4 & 0xFF);
+    message.push_back((packet.impulse_ns_3 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_3 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_3 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_3 & 0xFF);
+    message.push_back((packet.impulse_ns_2 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_2 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_2 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_2 & 0xFF);
+    message.push_back((packet.impulse_ns_1 >> 24) & 0xFF);
+    message.push_back((packet.impulse_ns_1 >> 16) & 0xFF);
+    message.push_back((packet.impulse_ns_1 >> 8) & 0xFF);
+    message.push_back(packet.impulse_ns_1 & 0xFF);
+    message.push_back((packet.phase >> 24) & 0xFF);
+    message.push_back((packet.phase >> 16) & 0xFF);
+    message.push_back((packet.phase >> 8) & 0xFF);
+    message.push_back(packet.phase & 0xFF);
+    return message;
+}
+
 int main(int argc, char *argv[]) {
 
     if (argc != 3) {
@@ -73,6 +173,9 @@ int main(int argc, char *argv[]) {
     std::string message;
     socklen_t addr_len = sizeof(client_addr);
     std::vector<Packet> last_packets;
+
+    SpiController spi("/dev/spidev1.0");
+    spi.setSpeed(500000); // Set SPI speed to 500 kHz
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("socket creation failed");
@@ -115,8 +218,8 @@ int main(int argc, char *argv[]) {
 
         if (buffer[0] == static_cast<char>(255)) {
             // Если первый байт равен 255, читаем сообщение как текст, исключая первый байт
-        	std::cout << "Received text message: " << std::string(buffer + 1, n - 1) << std::endl;
-        	continue;
+            std::cout << "Received text message: " << std::string(buffer + 1, n - 1) << std::endl;
+            continue;
         }
 
         if (n < 16) {
@@ -124,12 +227,12 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        if ((n - 11) % 44 != 0) {
+        if ((n - 11) % NUM_BYTES_PACKET != 0) {
             std::cerr << "The number of bytes is incorrect." << std::endl;
             continue;
         }
 
-        int k = (n - 11) / 44;
+        int k = (n - 11) / NUM_BYTES_PACKET;
 
         uint32_t cyclic_counter, checksum;
         uint16_t len_info;
@@ -156,8 +259,10 @@ int main(int argc, char *argv[]) {
             memcpy(&packets[i].impulse_ns_2, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
             memcpy(&packets[i].impulse_ns_1, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
             memcpy(&packets[i].phase, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
+            memcpy(&packets[i].packet_id, buffer + current, sizeof(uint8_t)); current += sizeof(uint8_t);
 
             std::cout << "Block " << i << ":" << std::endl;
+            std::cout << "  packet_id[" << i << "] = " << static_cast<int>(packets[i].packet_id) << std::endl;
             std::cout << "  phase[" << i << "] = " << packets[i].phase << std::endl;
             std::cout << "  impulse_ns_1[" << i << "] = " << packets[i].impulse_ns_1 << std::endl;
             std::cout << "  impulse_ns_2[" << i << "] = " << packets[i].impulse_ns_2 << std::endl;
@@ -176,6 +281,12 @@ int main(int argc, char *argv[]) {
         }
 
         last_packets = packets;
+        
+        // Выводим информацию о полученных пакетах по протоколу SPI
+        for (const auto& packet : packets) {
+            std::vector<uint8_t> spi_message = createMessage(packet);
+            spi.transfer(spi_message);
+        }
 
         memcpy(&cyclic_counter, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
         memcpy(&checksum, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
@@ -188,6 +299,7 @@ int main(int argc, char *argv[]) {
         std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
         std::cout << "  Number of bytes received: " << n << std::endl;
 
+        // Отправляем подтверждение о получении пакетов обратно по протоколу UDP
         message = "ok";
 
         if (sendto(sockfd, message.c_str(), message.size(), 0, (struct sockaddr *)&slave_addr, sizeof(slave_addr)) < 0) {
