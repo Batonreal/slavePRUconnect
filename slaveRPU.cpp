@@ -11,6 +11,10 @@
 #include <linux/spi/spidev.h>
 #include <sstream>
 #include <stdexcept>
+#include <nlohmann/json.hpp>
+#include <fstream>
+
+using json = nlohmann::json;
 
 #define BUFFER_SIZE 2048
 #define NUM_BYTES_PACKET 45
@@ -263,10 +267,97 @@ void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<P
     memcpy(&message_id, buffer + current, sizeof(uint8_t));
 
     std::cout << "cyclic_counter = " << cyclic_counter << std::endl;
-    std::cout << "checksum = " << checksum << std::endl;
+    std::cout << "checksum = 0x" << std::setw(8) << std::setfill('0') << std::hex << checksum << std::endl;
     std::cout << "len_info = " << len_info << std::endl;
     std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
     std::cout << "  Number of bytes received: " << n << std::endl;
+}
+
+void dataOnTheAmplitudesRadioimpulse(char* buffer, int n, SpiController& spi) {
+    if (n < 16) {
+        std::cerr << "Received insufficient data." << std::endl;
+        return;
+    }
+
+    uint32_t cyclic_counter, checksum;
+    uint16_t len_info;
+    uint8_t message_id;
+    uint32_t swithed_on;
+    bool time_interval[32];
+    uint8_t generator[16];
+    uint8_t number_of_generators[32];
+    uint8_t transfer_dir;
+
+    for (int i = 0; i < n / 2; ++i) {
+        std::swap(buffer[i], buffer[n - 1 - i]);
+    }
+
+    size_t current = 0;
+
+    std::cout << "Received data:" << std::endl;
+
+    memcpy(&swithed_on, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
+
+    for (int i = 0; i < 32; ++i) {
+        time_interval[i] = (swithed_on & (1 << (31 - i))) != 0;
+    }
+
+    std::cout << "time_interval = ";
+    for (int i = 0; i < 32; ++i) {
+        std::cout << time_interval[i];
+        if ((i + 1) % 4 == 0) std::cout << ' ';
+    }
+    std::cout << std::endl;
+
+    for (int i = 0; i < 16; ++i) {
+        memcpy(&generator[i], buffer + current, sizeof(uint8_t)); current += sizeof(uint8_t);
+    }
+
+    for (int i = 0; i < 16; ++i) {
+        uint8_t high_nibble = (generator[i] >> 4) & 0x0F;
+        uint8_t low_nibble = generator[i] & 0x0F;
+
+        number_of_generators[2 * i] = high_nibble + 1;
+        number_of_generators[2 * i + 1] = low_nibble + 1;
+    }
+
+    for (int i = 0; i < 32; ++i) {
+        std::cout << "generator[" << i << "], the number of generators turned on per half-wave = " << static_cast<int>(number_of_generators[i]) << std::endl;
+    }
+
+    memcpy(&transfer_dir, buffer + current, sizeof(uint8_t)); current += sizeof(uint8_t);
+
+    // Определяем направление по первому (старшему) биту transfer_dir
+    if (transfer_dir & 0x80) {
+        std::cout << "Direction: 2" << std::endl;
+    } else {
+        std::cout << "Direction: 1" << std::endl;
+    }
+
+    memcpy(&cyclic_counter, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
+    memcpy(&checksum, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
+    memcpy(&len_info, buffer + current, sizeof(uint16_t)); current += sizeof(uint16_t);
+    memcpy(&message_id, buffer + current, sizeof(uint8_t));
+
+    std::cout << "cyclic_counter = " << cyclic_counter << std::endl;
+    std::cout << "checksum = 0x" << std::setw(8) << std::setfill('0') << std::hex << checksum << std::endl;
+    std::cout << "len_info = " << len_info << std::endl;
+    std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
+
+    std::ifstream infile("data.json");
+    if (!infile.good()) {
+        std::ofstream json_file("data.json");
+        json_file.close();
+    }
+
+    json json_data;
+    json_data["transfer_dir"] = transfer_dir;
+    json_data["number_of_generators"] = std::vector<uint8_t>(number_of_generators, number_of_generators + 32);
+    json_data["time_interval"] = std::vector<bool>(time_interval, time_interval + 32);
+
+    std::ofstream json_file("data.json");
+    json_file << json_data.dump(4);
+    json_file.close();
 }
 
 int main(int argc, char *argv[]) {
@@ -337,6 +428,10 @@ int main(int argc, char *argv[]) {
 
             case static_cast<char>(3):
                 timeDataRadioimpulse(buffer, n, spi, last_packets);
+                break;
+
+            case static_cast<char>(5):
+                dataOnTheAmplitudesRadioimpulse(buffer, n, spi);
                 break;
 
             default:
