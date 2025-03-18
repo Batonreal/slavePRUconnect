@@ -1,10 +1,12 @@
 #include "SpiController.h"
+#include <iostream>
+#include <cstring>
+#include <arpa/inet.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-#include <stdexcept>
 #include <sstream>
-#include <cstring>
 
 SpiController::SpiController(const std::string& device) : devicePath(device) {
     openDevice();

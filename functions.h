@@ -21,7 +21,7 @@ struct Packet {
 };
 
 bool compare_packets(const Packet& p1, const Packet& p2);
-void check_for_duplicates(const std::vector<Packet>& previous_packets, const std::vector<Packet>& current_packets);
+int check_for_duplicates(const std::vector<Packet>& previous_packets, const std::vector<Packet>& current_packets);
 std::vector<uint8_t> createMessage(const Packet& packet, uint64_t& cumulative_impulse);
 void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<Packet>& last_packets);
 void dataOnTheAmplitudesRadioimpulse(char* buffer, int n, SpiController& spi);

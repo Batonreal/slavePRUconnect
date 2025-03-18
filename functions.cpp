@@ -12,7 +12,7 @@ bool compare_packets(const Packet& p1, const Packet& p2) {
     return p1.packet_id == p2.packet_id;
 }
 
-void check_for_duplicates(const std::vector<Packet>& previous_packets, const std::vector<Packet>& current_packets) {
+int check_for_duplicates(const std::vector<Packet>& previous_packets, const std::vector<Packet>& current_packets) {
     size_t prev_size = previous_packets.size();
     size_t curr_size = current_packets.size();
     size_t max_check = std::min(prev_size, curr_size);
@@ -27,8 +27,10 @@ void check_for_duplicates(const std::vector<Packet>& previous_packets, const std
         }
         if (duplicate_found) {
             std::cout << "Duplicate detected: last " << n << " packets of previous message match first " << n << " packets of current message." << std::endl;
+            return n; // Возвращаем количество повторяющихся пакетов
         }
     }
+    return 0; // Если дубликатов нет
 }
 
 std::vector<uint8_t> createMessage(const Packet& packet, uint64_t& cumulative_impulse) {
@@ -117,12 +119,12 @@ void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<P
         return;
     }
 
-    if ((n - 11) % NUM_BYTES_PACKET != 0) {
+    if ((n - 11) % 45 != 0) {
         std::cerr << "The number of bytes is incorrect." << std::endl;
         return;
     }
 
-    int k = (n - 11) / NUM_BYTES_PACKET;
+    int k = (n - 11) / 45;
 
     uint32_t cyclic_counter, checksum;
     uint16_t len_info;
@@ -166,8 +168,10 @@ void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<P
         std::cout << "  impulse_ns_10[" << i << "] = " << packets[i].impulse_ns_10 << std::endl;
     }
 
+    // Проверяем дубликаты и получаем количество повторяющихся пакетов
+    int duplicate_count = 0;
     if (!last_packets.empty()) {
-        check_for_duplicates(last_packets, packets);
+        duplicate_count = check_for_duplicates(last_packets, packets);
     }
 
     last_packets = packets;
@@ -175,10 +179,28 @@ void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<P
     // Выводим информацию о полученных пакетах SPI
     uint64_t cumulative_impulse = 0;
     std::vector<uint8_t> spi_message;
-    for (const auto& packet : packets) {
-        std::vector<uint8_t> packet_message = createMessage(packet, cumulative_impulse);
+
+    // Сначала суммируем cumulative_impulse только для дубликатов
+    for (int i = 0; i < duplicate_count; ++i) {
+        cumulative_impulse += packets[i].impulse_ns_1;
+        cumulative_impulse += packets[i].impulse_ns_2;
+        cumulative_impulse += packets[i].impulse_ns_3;
+        cumulative_impulse += packets[i].impulse_ns_4;
+        cumulative_impulse += packets[i].impulse_ns_5;
+        cumulative_impulse += packets[i].impulse_ns_6;
+        cumulative_impulse += packets[i].impulse_ns_7;
+        cumulative_impulse += packets[i].impulse_ns_8;
+        cumulative_impulse += packets[i].impulse_ns_9;
+        cumulative_impulse += packets[i].impulse_ns_10;
+    }
+
+    // Затем формируем сообщение для отправки по SPI, исключая дубликаты
+    for (int i = duplicate_count; i < static_cast<int>(packets.size()); ++i) {
+        std::vector<uint8_t> packet_message = createMessage(packets[i], cumulative_impulse);
         spi_message.insert(spi_message.end(), packet_message.begin(), packet_message.end());
     }
+
+    // Отправляем только уникальные пакеты по SPI
     spi.transfer(spi_message);
 
     memcpy(&cyclic_counter, buffer + current, sizeof(uint32_t)); current += sizeof(uint32_t);
@@ -188,6 +210,7 @@ void timeDataRadioimpulse(char* buffer, int n, SpiController& spi, std::vector<P
 
     std::cout << "cyclic_counter = " << cyclic_counter << std::endl;
     std::cout << "checksum = 0x" << std::setw(8) << std::setfill('0') << std::hex << checksum << std::endl;
+    std::cout << std::dec;
     std::cout << "len_info = " << len_info << std::endl;
     std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
     std::cout << "  Number of bytes received: " << n << std::endl;
@@ -261,6 +284,7 @@ void dataOnTheAmplitudesRadioimpulse(char* buffer, int n, SpiController& spi) {
 
     std::cout << "cyclic_counter = " << cyclic_counter << std::endl;
     std::cout << "checksum = 0x" << std::setw(8) << std::setfill('0') << std::hex << checksum << std::endl;
+    std::cout << std::dec;
     std::cout << "len_info = " << len_info << std::endl;
     std::cout << "message_id = " << static_cast<int>(message_id) << std::endl;
 
@@ -273,8 +297,14 @@ void dataOnTheAmplitudesRadioimpulse(char* buffer, int n, SpiController& spi) {
     json json_data;
     json_data["transfer_dir"] = transfer_dir;
     json_data["number_of_generators"] = std::vector<uint8_t>(number_of_generators, number_of_generators + 32);
-    json_data["time_interval"] = std::vector<bool>(time_interval, time_interval + 32);
 
+    std::vector<uint8_t> time_interval_as_uint8(32);
+    for (int i = 0; i < 32; ++i) {
+        time_interval_as_uint8[i] = time_interval[i] ? 1 : 0;
+    }
+    json_data["time_interval"] = time_interval_as_uint8;
+
+    // Записываем JSON объект в файл
     std::ofstream json_file("data.json");
     json_file << json_data.dump(4);
     json_file.close();
