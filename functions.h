@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "SpiController.h"
 
+#define NUM_BYTES_PACKET 45
+
 struct Packet {
     uint8_t packet_id;
     uint32_t phase;

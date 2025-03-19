@@ -9,26 +9,6 @@
 #include "functions.h"
 
 #define BUFFER_SIZE 2048
-#define NUM_BYTES_PACKET 45
-
-uint32_t calculate_crc32(const uint8_t* data, size_t length) {
-    uint32_t crc = 0xFFFFFFFF;
-    uint32_t polynomial = 0xEDB88320;
-
-    for (size_t i = 0; i < length; ++i) {
-        uint8_t byte = data[i];
-        crc ^= byte;
-        for (int j = 0; j < 8; ++j) {
-            if (crc & 1) {
-                crc = (crc >> 1) ^ polynomial;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-
-    return crc ^ 0xFFFFFFFF;
-}
 
 int main(int argc, char *argv[]) {
 
@@ -90,25 +70,6 @@ int main(int argc, char *argv[]) {
 
         std::cout << "  Number of bytes received: " << n << std::endl;
 
-        // Извлекаем контрольную сумму (4 байта в формате little-endian)
-        uint32_t received_checksum = (static_cast<uint8_t>(buffer[6]) << 24) |
-                                     (static_cast<uint8_t>(buffer[5]) << 16) |
-                                     (static_cast<uint8_t>(buffer[4]) << 8) |
-                                     static_cast<uint8_t>(buffer[3]);
-
-        // Вычисляем контрольную сумму для первых 3 байт и оставшейся части сообщения
-        uint32_t calculated_checksum = calculate_crc32(reinterpret_cast<uint8_t*>(buffer), 3);
-        calculated_checksum = calculate_crc32(reinterpret_cast<uint8_t*>(buffer + 7), n - 7);
-
-        // Проверяем контрольную сумму
-        if (calculated_checksum != received_checksum) {
-            std::cerr << "Checksum verification failed. Data is corrupted." << std::endl;
-            continue;
-        }
-
-        std::cout << "Checksum verification passed. Data is intact." << std::endl;
-
-        // Обрабатываем сообщение в зависимости от типа
         switch (buffer[0]) {
             case static_cast<char>(255):
                 // Если первый байт равен 255, читаем сообщение как текст, исключая первый байт
